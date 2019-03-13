@@ -12,7 +12,7 @@
  #include <Wire.h>
  
  // Device address
- const int KX222_Address = 0x1E;    
+ const int KX222_Address = 0x1E;  // With ADDR to GND  
 
  // Hexadecimal addresses for various TMP116 registers 
  const int XHP_L = 0x00;          // High pass filtered accelerometer output
@@ -39,12 +39,12 @@
   
   // Initiate wire library and serial communication
   Wire.begin();       
-  Serial.begin(9600); 
+  Serial.begin(115200); 
   Serial.print("Start\r\n");
   
   // Write to register
   I2Cwrite(KX222_Address, CNTL1, 0x40);
-  I2Cwrite(KX222_Address, ODCNTL, 0x02);
+  I2Cwrite(KX222_Address, ODCNTL, 0x07);    // First 3 LSB indicates the speed of the ODR
   I2Cwrite(KX222_Address, CNTL1, 0xC0); 
 
   Serial.println("Setup complete");
@@ -56,9 +56,6 @@
   double Acc = ReadAcc(); 
 
   Serial.println(Acc); 
-  
-  // Delay for 0.5 second
-  delay(500);
  }
 
 /*********************** Read Temperature Sensor Function **************************/
@@ -72,7 +69,7 @@ double ReadAcc(void){
   // Points to device & begins transmission
   Wire.beginTransmission(KX222_Address); 
   // Points to temperature register to read/write data
-  Wire.write(XOUT_L); 
+  Wire.write(ZOUT_L); 
   // Ends data transfer and transmits data from register
   Wire.endTransmission(); 
 
@@ -85,13 +82,11 @@ double ReadAcc(void){
   // Checks if data received matches the requested 2-bytes
   if(Wire.available() <= 2){  
     // Stores each byte of data from temperature register
-    data[0] = Wire.read(); 
-    data[1] = Wire.read(); 
+    data[0] = Wire.read();
+    data[1] = Wire.read();
 
     // Combines data to make 16-bit binary number
-    datac = ((data[0] << 8) | data[1]); 
-
-    // Convert to Celcius (7.8125 mC resolution) and return
+    datac = ((data[1] << 8) | data[0]); 
     return datac; 
   }
 }
