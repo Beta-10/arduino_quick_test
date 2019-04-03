@@ -39,9 +39,9 @@ const int INS2 = 0x13;           // Interrupt source register with Data Ready (2
 void setup() {
 
   // Initiate wire library and serial communication
-  Wire.setClock(1000000);    //Low speed setup
+  Wire.setClock(400000);    //Low speed setup
   Wire.begin();
-  Serial.begin(921600);
+  Serial.begin(115200);
   Serial.print("Start\r\n");
 
   // Write to register
