@@ -22,7 +22,7 @@ const int YHP_H = 0x03;
 const int ZHP_L = 0x04;
 const int ZHP_H = 0x05;
 
-const int XOUT_L = 0x06;          // Accelerometer output
+const int XOUT_L = 0x06;         // Accelerometer output
 const int XOUT_H = 0x07;
 const int YOUT_L = 0x08;
 const int YOUT_H = 0x09;
@@ -31,22 +31,29 @@ const int ZOUT_H = 0x0B;
 
 const int WHO_AM_I = 0x0F;       // Device ID
 
-const int CNTL1 = 0x18;           // Control register
+const int CNTL1 = 0x18;          // Control register
 const int ODCNTL = 0x1B;         // ODR Control
+const int INS2 = 0x13;           // Interrupt source register with Data Ready (2^4 position) 
 
 /************************* Initialization Setup Function **************************/
 void setup() {
 
   // Initiate wire library and serial communication
-  Wire.setClock(400000);    //High speed setup
+  Wire.setClock(1000000);    //Low speed setup
   Wire.begin();
   Serial.begin(921600);
   Serial.print("Start\r\n");
 
   // Write to register
-  I2Cwrite(KX222_Address, CNTL1, 0x40);
-  I2Cwrite(KX222_Address, ODCNTL, 0x0E);    // First 3 LSB indicates the speed of the ODR
-  I2Cwrite(KX222_Address, CNTL1, 0xC0);
+  I2Cwrite(KX222_Address, CNTL1, 0x60);     // 8G, DATA READY ENABLED, STANDBY MODE
+  delay(10);
+  I2Cwrite(KX222_Address, ODCNTL, 0x8F);    // 5 = 400 Hz; 7 = 1600Hz; E = 12.8kHz sampling, LPF is ODR/2
+  delay(10);
+  I2Cwrite(KX222_Address, 0x1C, 0x38);      // Setting interrupt
+  delay(10);
+  I2Cwrite(KX222_Address, 0x1F, 0x10);      // Routing interrupt to pin 1
+  delay(10);
+  I2Cwrite(KX222_Address, CNTL1, 0xE0);     // 8G, DATA READY ENABLED, OPERATING MODE
 
   Serial.println("Setup complete");
 }
@@ -93,6 +100,7 @@ int16_t ReadAcc(void) {
 void ReadAcc_Bulk(void) {
 
   // Data array to store 2-bytes from I2C line
+  uint8_t flag = 0;
   uint8_t data[2];
   // Combination of 2-byte data into 16-bit data
   int16_t datac[750];
@@ -101,6 +109,17 @@ void ReadAcc_Bulk(void) {
 
   for (i = 0; i < 750; i++)
   {
+    Wire.beginTransmission(KX222_Address);
+    Wire.write(INS2);
+    Wire.endTransmission();
+
+    while (!flag)
+    {
+      Wire.requestFrom(KX222_Address, 1);
+      flag = Wire.read();
+      flag = ((flag >> 4) && 0x01);
+    }
+      
     Wire.beginTransmission(KX222_Address);
     Wire.write(XOUT_L);
     Wire.endTransmission();
@@ -114,6 +133,7 @@ void ReadAcc_Bulk(void) {
 
       // Combines data to make 16-bit binary number
       datac[i] = ((data[1] << 8) | data[0]);
+      flag = 0;
     }
   }
   
