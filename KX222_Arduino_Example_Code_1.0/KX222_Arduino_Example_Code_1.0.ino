@@ -33,11 +33,18 @@ const int WHO_AM_I = 0x0F;       // Device ID
 
 const int CNTL1 = 0x18;          // Control register
 const int ODCNTL = 0x1B;         // ODR Control
+const int BUF_CNTL2 = 0x3B;      // Buffer control
+const int BUF_READ = 0x3F;       // Sample buffer
 const int INS2 = 0x13;           // Interrupt source register with Data Ready (2^4 position) 
 
-/************************* Initialization Setup Function **************************/
-void setup() {
+const int INTPIN = 2;
 
+static int i = 0;
+static int16_t datac[750];
+
+/************************* Initialization Setup Function **************************/
+void setup()
+{
   // Initiate wire library and serial communication
   Wire.setClock(400000);    //Low speed setup
   Wire.begin();
@@ -51,100 +58,68 @@ void setup() {
   delay(10);
   I2Cwrite(KX222_Address, 0x1C, 0x38);      // Setting interrupt
   delay(10);
-  I2Cwrite(KX222_Address, 0x1F, 0x10);      // Routing interrupt to pin 1
+  I2Cwrite(KX222_Address, 0x1F, 0x10);    // Routing interrupt to pin 1 (Based on DATA READY)
+  delay(10);
+  I2Cwrite(KX222_Address, 0x3B, 0xC0);      // Enable sample buffer, read 16-bit data, FILO
   delay(10);
   I2Cwrite(KX222_Address, CNTL1, 0xE0);     // 8G, DATA READY ENABLED, OPERATING MODE
-
   Serial.println("Setup complete");
+  Serial.println("Interrupt start");
+ 
+  pinMode(INTPIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(INTPIN), IntAcc, RISING);  
 }
 
 /************************* Infinite Loop Function **********************************/
-void loop() {
+void loop()
+{
   // Calls ReadSensor function to get temperature data
 
-  ReadAcc_Bulk();
-
-  //int16_t Acc = ReadAcc();
-  //Serial.println(Acc);
-}
-
-/*********************** Read KX222 Function ***************************************/
-int16_t ReadAcc(void) {
-
-  // Data array to store 2-bytes from I2C line
-  uint8_t data[2];
-  // Combination of 2-byte data into 16-bit data
-  int16_t datac;
-
-  Wire.beginTransmission(KX222_Address);
-  Wire.write(XOUT_L);
-  Wire.endTransmission();
-  
-  // Requests 2-byte temperature data from device
-  Wire.requestFrom(KX222_Address, 2);
-
-  // Checks if data received matches the requested 2-bytes
-  if (Wire.available() <= 2) {
-    // Stores each byte of data from temperature register
-    data[0] = Wire.read();
-    data[1] = Wire.read();
-
-    // Combines data to make 16-bit binary number
-    datac = ((data[1] << 8) | data[0]);
-    return datac;
+  if (i >= 340)
+  {
+    detachInterrupt(digitalPinToInterrupt(INTPIN));
+    ReadAcc_Bulk();
+    i = 0;
+    attachInterrupt(digitalPinToInterrupt(INTPIN), IntAcc, RISING);
   }
 }
-
 
 /*********************** Read KX222 Function (Bulk)*********************************/
-void ReadAcc_Bulk(void) {
-
-  // Data array to store 2-bytes from I2C line
-  uint8_t flag = 0;
-  uint8_t data[2];
-  // Combination of 2-byte data into 16-bit data
-  int16_t datac[750];
-  int16_t number = 0;
-  int i = 0;
-
-  for (i = 0; i < 750; i++)
-  {
-    Wire.beginTransmission(KX222_Address);
-    Wire.write(INS2);
-    Wire.endTransmission();
-
-    while (!flag)
-    {
-      Wire.requestFrom(KX222_Address, 1);
-      flag = Wire.read();
-      flag = ((flag >> 4) && 0x01);
-    }
-      
-    Wire.beginTransmission(KX222_Address);
-    Wire.write(XOUT_L);
-    Wire.endTransmission();
-
-    Wire.requestFrom(KX222_Address, 2);
-
-    if (Wire.available() <= 2) {
-      // Stores each byte of data from temperature register
-      data[0] = Wire.read();
-      data[1] = Wire.read();
-
-      // Combines data to make 16-bit binary number
-      datac[i] = ((data[1] << 8) | data[0]);
-      flag = 0;
-    }
-  }
+void ReadAcc_Bulk(void)
+{
+  uint8_t x_data[2];
+  uint8_t y_data[2];
+  uint8_t z_data[2];
   
-  for (i = 0; i < 750; i++)
+  int k = 0;
+  
+  // Ready for sample buffer read
+  Wire.beginTransmission(KX222_Address);
+  Wire.write(BUF_READ);
+  Wire.endTransmission();
+  Wire.requestFrom(KX222_Address, 340);
+
+  for (k = 0; k < 340; k++)
   {
-    Serial.println(datac[i]);
+    x_data[0] = Wire.receive();
+    x_data[1] = Wire.read();
+    y_data[0] = Wire.read();
+    y_data[1] = Wire.read();
+    z_data[0] = Wire.read();
+    z_data[1] = Wire.read();
+
+    datac[k] = ((x_data[1] << 8) | x_data[0]);
+  }
+
+  for (k = 0; k < 6; k++)
+  {
+    Serial.println(datac[k]);
   }
 }
 
 /**************************** I2C Write Function ********************************/
-double I2Cwrite(int dev, int reg, int data) {
+double I2Cwrite(int dev, int reg, int data)
+{
   // Takes in 4 variables:
   // device address, register addres
   // high and low bytes of data to transmit
@@ -153,4 +128,10 @@ double I2Cwrite(int dev, int reg, int data) {
   Wire.write(data);
   Wire.endTransmission();
   delay(10);
+}
+
+/**************************** Interrupt Function ********************************/
+void IntAcc()
+{ 
+  i = i + 1;
 }
