@@ -9,10 +9,9 @@
 
 */
 
-#include <Wire.h>
+#include <SPI.h>
 
 // Device address
-const int KX222_Address = 0x1E;  // With ADDR to GND
 
 // Hexadecimal addresses for various TMP116 registers
 const int XHP_L = 0x00;          // High pass filtered accelerometer output
@@ -33,125 +32,99 @@ const int WHO_AM_I = 0x0F;       // Device ID
 
 const int CNTL1 = 0x18;          // Control register
 const int ODCNTL = 0x1B;         // ODR Control
+const int BUF_CNTL2 = 0x3B;      // Buffer control
+const int BUF_READ = 0x3F;       // Sample buffer
 const int INS2 = 0x13;           // Interrupt source register with Data Ready (2^4 position) 
 
-/************************* Initialization Setup Function **************************/
-void setup() {
+const int INTPIN = 2;
+const int CS = 10;
 
-  // Initiate wire library and serial communication
+static int i = 0;
+static int16_t datac[750];
+
+/************************* Initialization Setup Function **************************/
+void setup()
+{
+  
+  pinMode(CS, OUTPUT);
+  pinMode(INTPIN, INPUT);
+  digitalWrite(CS, HIGH);                   // Disable SPI first
+
   SPI.begin();
   SPI.setBitOrder(MSBFIRST);
-  SPI
-  Serial.begin(115200);
+  
+  Serial.begin(38400);
   Serial.print("Start\r\n");
 
-  // Write to register
-  I2Cwrite(KX222_Address, CNTL1, 0x60);     // 8G, DATA READY ENABLED, STANDBY MODE
-  delay(10);
-  I2Cwrite(KX222_Address, ODCNTL, 0x8F);    // 5 = 400 Hz; 7 = 1600Hz; E = 12.8kHz sampling, LPF is ODR/2
-  delay(10);
-  I2Cwrite(KX222_Address, 0x1C, 0x38);      // Setting interrupt
-  delay(10);
-  I2Cwrite(KX222_Address, 0x1F, 0x10);      // Routing interrupt to pin 1
-  delay(10);
-  I2Cwrite(KX222_Address, CNTL1, 0xE0);     // 8G, DATA READY ENABLED, OPERATING MODE
+  // Write to register through SPI
+  //KX222_writeConfig(CNTL1, 0x60);           // 8G, DATA READY ENABLED, STANDBY MODE
+  //delay(10);
+  //KX222_writeConfig(ODCNTL, 0x8F);          // 5 = 400 Hz; 7 = 1600Hz; E = 12.8kHz sampling, LPF is ODR/2
+  //delay(10);
+  //KX222_writeConfig(0x1C, 0x38);            // Setting interrupt
+  //delay(10);
+  //KX222_writeConfig(0x1F, 0x10);            // Routing interrupt to pin 1 (Based on DATA READY)
+  //delay(10);
+  //KX222_writeConfig(CNTL1, 0xE0);           // 8G, DATA READY ENABLED, OPERATING MODE
 
+  KX222_writeConfig(0x18, 0x40);
+  KX222_writeConfig(0x1B, 0x02);
+  KX222_writeConfig(0x18, 0xC0);
+    
   Serial.println("Setup complete");
+  Serial.println("Interrupt start");
+  
+  //attachInterrupt(digitalPinToInterrupt(INTPIN), IntAcc, RISING);  
 }
 
 /************************* Infinite Loop Function **********************************/
-void loop() {
-  // Calls ReadSensor function to get temperature data
-
-  ReadAcc_Bulk();
-
-  //int16_t Acc = ReadAcc();
-  //Serial.println(Acc);
+void loop()
+{
+  datac[0] = KX222_readAcc(XOUT_L, 2);
+  //Serial.println(datac[0]);
 }
-
-/*********************** Read KX222 Function ***************************************/
-int16_t ReadAcc(void) {
-
-  // Data array to store 2-bytes from I2C line
-  uint8_t data[2];
-  // Combination of 2-byte data into 16-bit data
-  int16_t datac;
-
-  Wire.beginTransmission(KX222_Address);
-  Wire.write(XOUT_L);
-  Wire.endTransmission();
-  
-  // Requests 2-byte temperature data from device
-  Wire.requestFrom(KX222_Address, 2);
-
-  // Checks if data received matches the requested 2-bytes
-  if (Wire.available() <= 2) {
-    // Stores each byte of data from temperature register
-    data[0] = Wire.read();
-    data[1] = Wire.read();
-
-    // Combines data to make 16-bit binary number
-    datac = ((data[1] << 8) | data[0]);
-    return datac;
-  }
-}
-
 
 /*********************** Read KX222 Function (Bulk)*********************************/
-void ReadAcc_Bulk(void) {
-
-  // Data array to store 2-bytes from I2C line
-  uint8_t flag = 0;
-  uint8_t data[2];
-  // Combination of 2-byte data into 16-bit data
-  int16_t datac[750];
-  int16_t number = 0;
-  int i = 0;
-
-  for (i = 0; i < 750; i++)
-  {
-    Wire.beginTransmission(KX222_Address);
-    Wire.write(INS2);
-    Wire.endTransmission();
-
-    while (!flag)
-    {
-      Wire.requestFrom(KX222_Address, 1);
-      flag = Wire.read();
-      flag = ((flag >> 4) && 0x01);
-    }
-      
-    Wire.beginTransmission(KX222_Address);
-    Wire.write(XOUT_L);
-    Wire.endTransmission();
-
-    Wire.requestFrom(KX222_Address, 2);
-
-    if (Wire.available() <= 2) {
-      // Stores each byte of data from temperature register
-      data[0] = Wire.read();
-      data[1] = Wire.read();
-
-      // Combines data to make 16-bit binary number
-      datac[i] = ((data[1] << 8) | data[0]);
-      flag = 0;
-    }
-  }
+void ReadAcc_Bulk(void)
+{
   
-  for (i = 0; i < 750; i++)
-  {
-    Serial.println(datac[i]);
-  }
 }
 
-/**************************** I2C Write Function ********************************/
-double I2Cwrite(int dev, int reg, int data) {
-  // Takes in 4 variables:
-  // device address, register addres
-  // high and low bytes of data to transmit
-  Wire.beginTransmission(dev);
-  Wire.write(reg);
-  Wire.write(data);
-  Wire.endTransmission();
-  delay(10);
+/**************************** SPI Write Function ********************************/
+void KX222_writeConfig(uint8_t addr, uint8_t value)
+{
+  // MSB = 0 for writing
+  digitalWrite(CS, LOW);
+  SPI.transfer(addr);
+  SPI.transfer(value);
+  digitalWrite(CS, HIGH);
+}
+
+/**************************** SPI Read Function ********************************/
+int16_t  KX222_readAcc(uint8_t addr, int bytesToRead)
+{
+  // MSB = 1 for writing
+  uint8_t inByte[2];
+  byte ADDR_R = 0x80 | addr;
+
+  digitalWrite(CS, LOW);
+  SPI.transfer(ADDR_R);
+  
+  inByte[0] = SPI.transfer(0);
+  inByte[1] = SPI.transfer(0);
+
+  Serial.println(inByte[0]);
+  Serial.println(inByte[1]);
+  
+  bytesToRead--;
+  
+  digitalWrite(CS, HIGH);
+  
+  return(((inByte[1] << 8) | inByte[0]));
+}
+
+/**************************** Interrupt Function ********************************/
+void IntAcc()
+{
+
 }
