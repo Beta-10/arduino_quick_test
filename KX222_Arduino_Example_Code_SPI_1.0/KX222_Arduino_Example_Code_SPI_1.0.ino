@@ -34,11 +34,11 @@ const int CNTL1 = 0x18;          // Control register
 const int ODCNTL = 0x1B;         // ODR Control
 const int BUF_CNTL2 = 0x3B;      // Buffer control
 const int BUF_READ = 0x3F;       // Sample buffer
-const int INS2 = 0x13;           // Interrupt source register with Data Ready (2^4 position) 
+const int INS2 = 0x13;           // Interrupt source register with Data Ready (2^4 position)
 
 const int INTPIN = 2;
 const int CS = 10;
-const int DATA_LENGTH = 100;
+const int DATA_LENGTH = 32768;
 
 static int i = 0;
 static int16_t datac[DATA_LENGTH];
@@ -48,40 +48,40 @@ static bool flag = LOW;
 /************************* Initialization Setup Function **************************/
 void setup()
 {
-  
+
   pinMode(CS, OUTPUT);
   pinMode(INTPIN, INPUT);
   digitalWrite(CS, HIGH);                   // Disable SPI first
 
-  
+
   SPI.begin();
   SPI.setBitOrder(MSBFIRST);
-  
+
   Serial.begin(115200);
   Serial.print("Start\r\n");
 
   // Write to register through SPI
   KX222_writeConfig(CNTL1, 0x64);           // 16G, DATA READY ENABLED, STANDBY MODE
   delay(10);
-  KX222_writeConfig(ODCNTL, 0x8F);          // 5 = 400 Hz; 7 = 1600Hz; E = 12.8kHz sampling, LPF is ODR/2
+  KX222_writeConfig(ODCNTL, 0x4F);          // 5 = 400 Hz; 7 = 1600Hz; E = 12.8kHz sampling, LPF is ODR/2
   delay(10);
   KX222_writeConfig(0x1C, 0x38);            // Setting interrupt
   delay(10);
   KX222_writeConfig(0x1F, 0x10);            // Routing interrupt to pin 1 (Based on DATA READY)
   delay(10);
   KX222_writeConfig(CNTL1, 0xE4);           // 16G, DATA READY ENABLED, OPERATING MODE
-    
+
   Serial.println("Setup complete");
   Serial.println("Interrupt start");
-  
-  attachInterrupt(digitalPinToInterrupt(INTPIN), IntAcc, RISING);  
+
+  attachInterrupt(digitalPinToInterrupt(INTPIN), IntAcc, RISING);
 }
 
 /************************* Infinite Loop Function **********************************/
 void loop()
 {
-  
-  
+
+
   if (i >= DATA_LENGTH)
   {
     detachInterrupt(digitalPinToInterrupt(INTPIN));
@@ -90,7 +90,7 @@ void loop()
       Serial.println(datac[k]);
     }
     i = 0;
-    attachInterrupt(digitalPinToInterrupt(INTPIN), IntAcc, RISING); 
+    //attachInterrupt(digitalPinToInterrupt(INTPIN), IntAcc, RISING);
   }
 }
 
@@ -113,20 +113,20 @@ int16_t  KX222_readAcc(uint8_t addr, int bytesToRead)
   uint8_t inByte[2];
   uint8_t flagByte = 0;
   byte ADDR_R = 0x80 | addr;
-    
+
   SPI.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
   digitalWrite(CS, LOW);
   SPI.transfer(ADDR_R);
-  
+
   inByte[0] = SPI.transfer(0);
   inByte[1] = SPI.transfer(0);
-  
+
   bytesToRead--;
-  
+
   digitalWrite(CS, HIGH);
   SPI.endTransaction();
-  
-  return(((inByte[1] << 8) | inByte[0]));
+
+  return (((inByte[1] << 8) | inByte[0]));
 }
 
 /**************************** Interrupt Function ********************************/
@@ -135,5 +135,5 @@ void IntAcc()
   //detachInterrupt(digitalPinToInterrupt(INTPIN));
   datac[i] = KX222_readAcc(XOUT_L, 2);
   i++;
-  //attachInterrupt(digitalPinToInterrupt(INTPIN), IntAcc, RISING); 
+  //attachInterrupt(digitalPinToInterrupt(INTPIN), IntAcc, RISING);
 }
